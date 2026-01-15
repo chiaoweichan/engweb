@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>英文單字解謎大挑戰</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <!-- 背景影片 -->
+    <video autoplay muted loop id="bg-video">
+        <source src="/static/bgv-start.mp4" type="video/mp4">
+    </video>
+
+    <!-- 主畫面 -->
+    <div id="main-menu" class="center-content">
+        <h1>單字解謎大挑戰</h1>
+        <div id="start-box" class="game-box" onclick="startGame()">
+            <img src="/static/image/start_game.png" alt="start" class="box-img">
+            <p>開始遊戲</p>
+        </div>
+    </div>
+
+    <!-- 遊戲模式選擇畫面 -->
+    <div id="mode-menu" class="center-content hidden">
+        <a href="/easy" alt="easy mode">
+            <div class="mode-box fade-in">
+                <img src="/static/image/easy_mode.png" alt="easy mode">
+                <p>簡單模式</p>
+            </div>
+        </a>
+        <a href="/hard" alt="hard mode">
+            <div class="mode-box fade-in">
+                <img src="/static/image/hard_mode.png" alt="hard mode">
+                <p>困難模式</p>
+            </div>
+        </a>
+    </div>
+    <audio src="/static/bgm-start.mp3" id="bgm" loop></audio>
+</body>
+
+<script>
+    function startGame() {
+        // 播放背景音樂
+        const bgm = document.getElementById('bgm');
+        bgm.play();
+
+        // 切換畫面
+        document.getElementById('main-menu').classList.add('hidden');
+        const modeMenu = document.getElementById('mode-menu');
+        modeMenu.classList.remove('hidden');
+
+        // 動畫效果
+        const modes = document.querySelectorAll('.mode-box');
+        modes.forEach((box, index) => {
+            setTimeout(() => {
+                box.classList.add('show')
+            }, index * 300); // 依序淡入動畫
+        });
+    }
+</script>
+</html>
