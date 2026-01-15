@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>簡單模式：單字解謎</title>
+    <link rel="stylesheet" href="/static/easy_mode.css">
+</head>
+<body>
+    <audio id="easy-bgm" src="/static/music_easy.mp3" loop autoplay></audio>
+
+
+    <div class="bg-layer"></div>
+    <a href="/" alt="go-back">
+        <button id="back-btn" class="back-btn">回上頁</button>
+    </a>
+
+
+    <div id="level-indicator">
+        <div class="level-circle active">1</div>
+        <div class="level-circle">2</div>
+        <div class="level-circle">3</div>
+        <div class="level-circle">4</div>
+        <div class="level-circle">5</div>
+        <div class="level-circle">6</div>
+        <div class="level-circle">7</div>
+        <div class="level-circle">8</div>
+        <div class="level-circle">9</div>
+        <div class="level-circle">10</div>
+        <div class="level-circle">11</div>
+        <div class="level-circle">12</div>
+    </div>
+
+
+    <div id="stars-container">
+        <span class="star word-star" id="star1"></span>
+        <span class="star word-star" id="star2"></span>
+        <span class="star word-star" id="star3"></span>
+        <span class="star sentence-star" id="star4"></span>
+        <span class="star sentence-star" id="star5"></span>
+        <span class="star sentence-star" id="star6"></span>
+        <span class="star sentence-star" id="star7"></span>
+    </div>
+
+
+    <div id="scoring-standards" class="scoring-standards hidden">
+        <h4>如何獲得更多星星?</h4>
+        <ul>
+            <li>⭐ 句子符合題目文法提示要求 (基本條件)</li>
+            <li>⭐ 句子使用了正確單字 (需要先滿足條件1)</li>
+            <li>⭐ 完全沒有文法或拼寫錯誤 (需要先滿足條件1和2)</li>
+            <li>⭐ 句子表達流暢，達一定複雜度 (需要先滿足條件1、2、3)</li>
+        </ul>
+    </div>
+
+
+    <div id="game-box" class="game-box">
+        <div id="left-side">
+            <img id="vague-image" src="" alt="vague-image">
+            <p>猜猜看圖片中有什麼？</p>
+        </div>
+        <div id="right-side">
+            <div id="tip-boxes">
+                <div class="tip-box" id="tip1"></div>
+                <div class="tip-box" id="tip2"></div>
+                <div class="tip-box" id="tip3"></div>
+            </div>
+            <div id="answer-boxes">
+                <div class="answer-box" id="answer1"></div>
+                <div class="answer-box" id="answer2"></div>
+                <div class="answer-box" id="answer3"></div>
+            </div>
+        </div>
+    </div>
+    <div class="sentence" id="sentence">
+        <p>請用選擇的三個單字造一個句子</p>
+        <input type="text" id="sentence-input" placeholder="在這裡輸入您的英文句子..." class="sentence-input">
+       
+        <button id="confirm-sentence-btn" class="confirm-sentence-btn hidden">確認造句</button>
+        <button id="generate-image-btn" class="hidden">生成圖片</button>
+    </div>
+
+
+    <div id="answer-area" class="answer-area">
+        <div class="word-card">
+            <div class="cards">
+            </div>
+            <div id="confirm" class="confirm">
+                <button class="check-words-btn hidden">檢查單字</button>
+            </div>
+        </div>
+        <div class="feed-back">
+            <div id="feedback-container"></div>
+        </div>
+    </div>
+    <div id="message-box" class="message-box hidden">
+        只能選三張噢！
+    </div>
+
+
+    <div id="image-modal" class="modal-backdrop">
+        <div class="modal-content">
+            <div class="modal-body">
+                <h3>您用句子生成的圖片如下：</h3>
+                <img id="generated-image" src="" alt="Generated Image">
+            </div>
+            <div class="modal-footer">
+                <button id="replay-btn">再玩一次</button>
+                <button id="next-level-btn">下一關</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // =============== 全域變數 ===============
+        let currentLevel = 1;
+        let levelDataCache = [];
+        let currentSentencePrompt = "";
+        // 🎯 關鍵變數：追蹤 AI 是否已完成一次回饋 (用於控制圖片按鈕)
+        let hasAIProvidedFeedback = false;
+        // 追蹤單字是否全對 (僅用於答案框鎖定)
+        let hasAIProvidedAllCorrectFeedback = false;
+
+
+        // 42 張字卡
+        const words = [
+            "universe","crocodile","jellyfish","farm","cow","chicken","turtle","umbrella","raining",
+            "pigeon","penguin","fence","waterfall","elephant","bird","bunny","desert","wolf","rock",
+            "zebra","lion","boat","ocean","whale","cat","moon","night","koala","ice","grass","puppy",
+            "parrot","forest","snow","rose","duck","tiger","horse","goose","mountain","dessert","fish"
+        ];
+       
+        // ================= 關卡控制函式 ===================
+
+
+        /**
+         * 🎯 載入指定關卡的資料並更新畫面 (核心重置/載入邏輯)
+         * @param {number} level - 要載入的關卡編號
+         */
+        function loadLevel(level) {
+            if (level > levelDataCache.length) {
+                alert("恭喜您完成所有關卡！現在將回到第一關。");
+                level = 1;
+            }
+
+
+            const levelData = levelDataCache.find(item => item.level === level);
+           
+            if (!levelData) {
+                console.error(`找不到關卡 ${level} 的資料。`);
+                return;
+            }
+
+
+            currentLevel = level;
+            // 重設 AI 回饋標誌
+            hasAIProvidedFeedback = false;
+            hasAIProvidedAllCorrectFeedback = false;
+
+
+            // 1. 更新關卡指示器
+            const circles = document.querySelectorAll(".level-circle");
+            circles.forEach(circle => {
+                circle.classList.remove("active");
+                if (parseInt(circle.textContent) === level) {
+                    circle.classList.add("active");
+                }
+            });
+
+
+            // 2. 更新圖片和提示
+            document.getElementById("vague-image").src = levelData.image_vague;
+            document.getElementById("tip1").textContent = levelData.tip[0];
+            document.getElementById("tip2").textContent = levelData.tip[1];
+            document.getElementById("tip3").textContent = levelData.tip[2];
+
+
+            // 3. 重設答案區、造句區、回饋區
+            const answerBoxes = document.querySelectorAll(".answer-box");
+            const cardsContainer = document.querySelector(".cards");
+
+
+            answerBoxes.forEach(box => {
+                const word = box.textContent.trim();
+                box.textContent = "";
+                box.classList.remove("incorrect", "correct", "correct-locked");
+               
+                if (word && !cardsContainer.querySelector(`[data-word="${word}"]`)) {
+                    const card = document.createElement("div");
+                    card.className = "card";
+                    card.dataset.word = word;
+                    card.textContent = word;
+                    cardsContainer.appendChild(card);
+                }
+            });
+           
+            document.getElementById("sentence-input").value = "";
+            document.getElementById("feedback-container").innerHTML = "";
+           
+            // 重設星星為暗
+            document.querySelectorAll(".star").forEach(star => star.classList.remove("lit"));
+           
+            // 隱藏評分標準
+            document.getElementById("scoring-standards").classList.add("hidden");
+           
+            renderCards();
+            setSentencePrompt(levelData);
+           
+            document.querySelector(".confirm-btn").classList.add("hidden");
+            document.getElementById("generate-image-btn").classList.add("hidden");
+        }
+
+
+
+
+        // 產生字卡 (保持不變)
+        function renderCards() {
+            const cardsContainer = document.querySelector(".cards");
+           
+            const takenWords = Array.from(document.querySelectorAll(".answer-box"))
+                                             .map(box => box.textContent.trim())
+                                             .filter(word => word !== "");
+
+
+            cardsContainer.innerHTML = "";
+            const sortedWords = [...words].sort();
+            sortedWords.forEach(word => {
+                if (takenWords.includes(word)) return;
+
+
+                const card = document.createElement("div");
+                card.className = "card";
+                card.textContent = word;
+                card.dataset.word = word;
+                cardsContainer.appendChild(card);
+            });
+        }
+       
+        // 設定句子提示 (保持不變)
+        function setSentencePrompt(levelData) {
+            const promptElement = document.querySelector("#sentence p");
+            if (levelData && levelData.sentence && levelData.sentence.length > 0) {
+                const randomIndex = Math.floor(Math.random() * levelData.sentence.length);
+                const randomPrompt = levelData.sentence[randomIndex];
+                currentSentencePrompt = randomPrompt;
+                promptElement.innerHTML = `請用選擇的三個單字造一個句子 (${randomPrompt})`;
+            } else {
+                currentSentencePrompt = "";
+                promptElement.innerHTML = `請用選擇的三個單字造一個句子`;
+            }
+        }
+
+
+        // 顯示訊息框（1 秒後自動消失） (保持不變)
+        function showMessage(msg) {
+            const box = document.getElementById("message-box");
+            box.textContent = msg;
+            box.classList.add("show");
+            setTimeout(() => {
+                box.classList.remove("show");
+            }, 1000);
+        }
+
+
+        // 點擊字卡 → 填入答案區 (保持不變)
+        function setupCardEvents() {
+            document.querySelector(".cards").addEventListener("click", e => {
+                if (!e.target.classList.contains("card")) return;
+                const word = e.target.dataset.word;
+                const boxes = [
+                    document.getElementById("answer1"),
+                    document.getElementById("answer2"),
+                    document.getElementById("answer3")
+                ];
+                const targetBox = boxes.find(box => box.textContent === "");
+                if (!targetBox) {
+                    showMessage("只能選三張噢！");
+                    return;
+                }
+                targetBox.textContent = word;
+                e.target.remove();
+                updateCheckWordsButton();
+                updateConfirmSentenceButton();
+                updateImageButtonVisibility();
+            });
+        }
+
+
+        // 點擊答案 → 文字回去字卡區
+        function setupAnswerBoxEvents() {
+            const boxes = document.querySelectorAll(".answer-box");
+            boxes.forEach(box => {
+                box.addEventListener("click", () => {
+                    if (box.textContent === "") return;
+                   
+                    // 🎯 如果單字已被鎖定，則不能點擊
+                    if (box.classList.contains("correct-locked")) {
+                        showMessage("單字已答對，請專注於造句！");
+                        return;
+                    }
+                   
+                    const word = box.textContent;
+                    box.textContent = "";
+                    box.classList.remove("incorrect", "correct");
+                   
+                    const card = document.createElement("div");
+                    card.className = "card";
+                    card.dataset.word = word;
+                    card.textContent = word;
+                   
+                    const cardsContainer = document.querySelector(".cards");
+                    const existingCards = Array.from(cardsContainer.children);
+                    let inserted = false;
+                    for (let i = 0; i < existingCards.length; i++) {
+                        if (word.localeCompare(existingCards[i].textContent) < 0) {
+                            cardsContainer.insertBefore(card, existingCards[i]);
+                            inserted = true;
+                            break;
+                        }
+                    }
+                    if (!inserted) {
+                        cardsContainer.appendChild(card);
+                    }
+                    updateCheckWordsButton();
+                    updateConfirmSentenceButton();
+                    updateImageButtonVisibility();
+                });
+            });
+        }
+
+
+        /**
+         * 根據AI回饋評估句子正確率並設置句子星星
+         * @param {string} aiFeedback - AI的回饋文字
+         * @param {Array} correctWords - 正確單字列表
+         * @param {Array} userWords - 使用者選擇的單字
+         * @param {string} userSentence - 使用者輸入的句子
+         */
+        function evaluateSentenceAndSetStars(aiFeedback, correctWords, userWords, userSentence) {
+            let stars = 0;
+            const feedback = aiFeedback.toLowerCase();
+           
+            // 階層式評估星星
+            // 條件1：句子符合題目文法提示要求 (基本條件)
+            const condition1 = (feedback.includes('符合') || feedback.includes('正確')) && !feedback.includes('不符合') && !feedback.includes('不符');
+            if (!condition1) {
+                stars = 0; // 不符合提示要求，無法獲得任何星星
+            } else {
+                stars = 1; // 至少獲得1顆星星
+               
+                // 條件2：句子使用了正確單字 (必須先滿足條件1)
+                const sentenceWords = userSentence.toLowerCase().split(/\s+/).filter(word => word.length > 0);
+                const usedCorrectWords = correctWords.filter(word =>
+                    sentenceWords.some(sentenceWord => sentenceWord.includes(word) || word.includes(sentenceWord))
+                );
+                const condition2 = usedCorrectWords.length >= 3; // 必須使用三個符合圖片的正確單字
+               
+                if (condition2) {
+                    stars = 2; // 獲得2顆星星
+                   
+                    // 條件3：完全沒有文法或拼寫錯誤 (必須先滿足條件1和2)
+                    const condition3 = (feedback.includes('文法正確') || feedback.includes('語法正確')) && 
+                        !feedback.includes('文法錯誤') && !feedback.includes('語法錯誤') && 
+                        !feedback.includes('大小寫錯誤') && !feedback.includes('拼寫錯誤');
+                    if (condition3) {
+                        stars = 3; // 獲得3顆星星
+                       
+                        // 條件4：句子表達流暢，達一定複雜度 (必須先滿足條件1、2、3)
+                        const wordCount = userSentence.split(/\s+/).filter(word => word.length > 0).length;
+                        const hasAdjective = /\b(beautiful|big|small|happy|sad|red|blue|green|yellow|white|black|brown|fast|slow|cold|hot|new|old|good|bad|nice|ugly)\b/i.test(userSentence);
+                        const hasConjunction = /\b(and|but|or|because|although|when|where|why|how|so|then|after|before)\b/i.test(userSentence);
+                        const condition4 = (hasAdjective || hasConjunction) && wordCount >= 6; // 包含形容詞或連接詞，且句子較長
+                       
+                        if (condition4) {
+                            stars = 4; // 獲得4顆星星
+                        }
+                    }
+                }
+            }
+           
+            // 設置句子星星顯示（星星4-7）
+            document.querySelectorAll(".sentence-star").forEach((star, index) => {
+                if (index < stars) {
+                    star.classList.add("lit");
+                } else {
+                    star.classList.remove("lit");
+                }
+            });
+
+
+            // 顯示評分標準
+            const scoringStandards = document.getElementById("scoring-standards");
+            if (stars > 0) {
+                scoringStandards.classList.remove("hidden");
+            } else {
+                scoringStandards.classList.add("hidden");
+            }
+        }
+
+
+
+
+        // 設定造句輸入框的監聽事件 (保持不變)
+        function setupInputListener() {
+            const sentenceInput = document.getElementById("sentence-input");
+            if (sentenceInput) {
+                sentenceInput.addEventListener("input", () => {
+                    updateCheckWordsButton();
+                    updateConfirmSentenceButton();
+                    updateImageButtonVisibility();
+                });
+            }
+        }
+
+
+
+
+        // 更新檢查單字按鈕是否顯示的邏輯
+        function updateCheckWordsButton() {
+            const btn = document.querySelector(".check-words-btn");
+            if (!btn) return;
+
+
+            const a1 = document.getElementById("answer1").textContent.trim();
+            const a2 = document.getElementById("answer2").textContent.trim();
+            const a3 = document.getElementById("answer3").textContent.trim();
+           
+            const shouldShow = (a1 !== "" && a2 !== "" && a3 !== "");
+
+
+            btn.classList.toggle("hidden", !shouldShow);
+        }
+
+
+        // 更新確認造句按鈕是否顯示的邏輯
+        function updateConfirmSentenceButton() {
+            const btn = document.getElementById("confirm-sentence-btn");
+            if (!btn) return;
+
+
+            const sentenceInput = document.getElementById("sentence-input");
+            const sentenceFilled = sentenceInput && sentenceInput.value.trim() !== "";
+            const wordsChecked = document.querySelector(".word-star.lit") !== null; // 檢查是否有單字星星亮起
+
+
+            const shouldShow = sentenceFilled && wordsChecked;
+
+
+            btn.classList.toggle("hidden", !shouldShow);
+        }
+
+
+        /**
+         * 根據造句完成度評估並設置句子星星（階層式）
+         */
+        function evaluateSentenceCompletion() {
+            const sentenceInput = document.getElementById("sentence-input");
+            const userSentence = sentenceInput.value.trim();
+            const levelData = levelDataCache.find(item => item.level === currentLevel);
+           
+            if (!levelData) return;
+
+
+            const correctWords = levelData.answer.map(w => w.toLowerCase());
+            const userBoxes = [
+                document.getElementById("answer1"),
+                document.getElementById("answer2"),
+                document.getElementById("answer3")
+            ];
+            const userWords = userBoxes.map(box => box.textContent.trim().toLowerCase()).filter(word => word !== "");
+
+
+            let stars = 0;
+
+
+            // 準備檢查變數
+            const sentenceWords = userSentence.toLowerCase().split(/\s+/).filter(word => word.length > 0);
+            const wordCount = sentenceWords.length;
+            const hasSubject = /\b(I|you|he|she|it|we|they|the|a|an|this|that|these|those)\b/i.test(userSentence);
+            const hasVerb = /\b(is|am|are|was|were|be|been|being|have|has|had|do|does|did|will|would|can|could|should|may|might|must|shall)\b/i.test(userSentence);
+            const properCapitalization = /^[A-Z]/.test(userSentence); // 句子開頭大寫
+            const hasProperEnding = /[.!?]$/.test(userSentence); // 句子結尾有標點
+            const hasAdjective = /\b(beautiful|big|small|happy|sad|red|blue|green|yellow|white|black|brown|fast|slow|cold|hot|new|old|good|bad|nice|ugly)\b/i.test(userSentence);
+            const hasConjunction = /\b(and|but|or|because|although|when|where|why|how|so|then|after|before)\b/i.test(userSentence);
+
+
+            // 階層式評估星星
+            // 條件1：句子符合題目文法提示要求 (基本條件) - 檢查句子包含題目中所要求的文法（These/Those/They are 或 What is/are ... doing?）
+            const hasTheseThoseTheyAre = /\b(these|those|they are)\b/i.test(userSentence);
+            const hasWhatIsAreDoing = /\bwhat (is|are) .+ doing\b/i.test(userSentence);
+            const condition1 = hasTheseThoseTheyAre || hasWhatIsAreDoing; // 句子必須根據提示使用 These/Those/They are 或 What is/are ... doing? 句型
+           
+            if (!condition1) {
+                stars = 0; // 不符合基本要求，無法獲得任何星星
+            } else {
+                stars = 1; // 至少獲得1顆星星
+               
+                // 條件2：句子使用了正確單字 (必須先滿足條件1)
+                const usedCorrectWords = correctWords.filter(word =>
+                    sentenceWords.some(sentenceWord => sentenceWord.includes(word) || word.includes(sentenceWord))
+                );
+                const condition2 = usedCorrectWords.length >= 3; // 必須使用三個符合圖片的正確單字
+               
+                if (condition2) {
+                    stars = 2; // 獲得2顆星星
+                   
+                    // 條件3：完全沒有文法或拼寫錯誤 (必須先滿足條件1和2)
+                    const condition3 = hasSubject && hasVerb && properCapitalization && hasProperEnding; // 包含主語、動詞、大小寫正確、標點符號正確
+                   
+                    if (condition3) {
+                        stars = 3; // 獲得3顆星星
+                       
+                        // 條件4：句子表達流暢，達一定複雜度 (必須先滿足條件1、2、3)
+                        const condition4 = (hasAdjective || hasConjunction) && wordCount >= 6; // 包含形容詞或連接詞，且句子較長
+                       
+                        if (condition4) {
+                            stars = 4; // 獲得4顆星星
+                        }
+                    }
+                }
+            }
+
+
+            // 設置句子星星顯示（星星4-7）
+            document.querySelectorAll(".sentence-star").forEach((star, index) => {
+                if (index < stars) {
+                    star.classList.add("lit");
+                } else {
+                    star.classList.remove("lit");
+                }
+            });
+
+
+            // 顯示評分標準
+            const scoringStandards = document.getElementById("scoring-standards");
+            if (stars > 0) {
+                scoringStandards.classList.remove("hidden");
+            } else {
+                scoringStandards.classList.add("hidden");
+            }
+        }
+       
+        // ================= AI 功能函數 (實際呼叫 Flask 後端) ===================
+
+
+        // 打字效果 (保持不變)
+        function typeEffect(elementId, text, delay = 50, callback = null) {
+            const container = document.getElementById(elementId);
+            if (!container) { if (callback) callback(); return; }
+           
+            container.innerHTML = '';
+            const outputElement = document.createElement('pre');
+            outputElement.className = 'ai-feedback-content';
+            container.appendChild(outputElement);
+
+
+            let i = 0;
+            const feedBackBox = document.querySelector(".feed-back");
+
+
+            function typing() {
+                if (i < text.length) {
+                    const char = text.charAt(i);
+                    if (char === '\n') { outputElement.innerHTML += '<br>'; }
+                    else { outputElement.textContent += char; }
+                    i++;
+                    setTimeout(typing, delay);
+                    feedBackBox.scrollTop = feedBackBox.scrollHeight;
+                } else {
+                    if (callback) { callback(); }
+                }
+            }
+            typing();
+        }
+
+
+        /**
+         * 🎯 發送請求給 Flask 後端 AI API，並在回饋後立即顯示「生成圖片」按鈕
+         */
+        async function sendFeedbackToAI(level, missingWords, incorrectWords, userSentence, sentencePrompt, userWords, correctAnswers) {
+            const feedbackContainer = document.getElementById("feedback-container");
+            const confirmSentenceBtn = document.getElementById("confirm-sentence-btn");
+            const imageBtn = document.getElementById("generate-image-btn");
+
+
+            // 1. 禁用按鈕並顯示載入狀態
+            confirmSentenceBtn.disabled = true;
+            imageBtn.classList.add("hidden");
+            feedbackContainer.innerHTML = `🤖 AI 正在思考中，請稍候... <span class="loading-dot">.</span><span class="loading-dot">.</span><span class="loading-dot">.</span>`;
+           
+            let isAllCorrect = missingWords.length === 0;
+
+
+            const payload = {
+                level: level,
+                missing_words: missingWords,        
+                incorrect_words: incorrectWords,      
+                user_sentence: userSentence,
+                sentence_prompt: sentencePrompt,
+                correct_words: userWords          
+            };
+           
+            // 每次提交時，重置回饋狀態
+            hasAIProvidedFeedback = false;
+            hasAIProvidedAllCorrectFeedback = isAllCorrect; // 仍用於單字鎖定
+
+
+            try {
+                // 3. 實際發送 POST 請求
+                const response = await fetch("/api/ai_feedback", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+               
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`API 服務錯誤: ${response.status}. 詳細資訊: ${errorText.substring(0, 100)}`);
+                }
+
+
+                const result = await response.json();
+                const aiFeedbackText = result.feedback || "AI 服務未返回有效回饋。";
+               
+                // 4. 處理回饋顯示
+                const onTypingComplete = () => {
+                    // 🎯 關鍵步驟：只要打字完成，就將狀態標記為已回饋
+                    hasAIProvidedFeedback = true;
+                    updateImageButtonVisibility();
+                   
+                    // 根據AI回饋評估句子並設置星星
+                    evaluateSentenceAndSetStars(aiFeedbackText, correctAnswers, userWords, userSentence);
+                };
+               
+                typeEffect('feedback-container', aiFeedbackText, 30, onTypingComplete);
+
+
+                // 5. 單字鎖定邏輯
+                if (isAllCorrect) {
+                    const userBoxes = [
+                        document.getElementById("answer1"),
+                        document.getElementById("answer2"),
+                        document.getElementById("answer3")
+                    ];
+                    document.querySelectorAll(".answer-box").forEach(box => box.classList.remove("correct-locked"));
+
+
+                    userBoxes.forEach(box => {
+                        if (box.textContent.trim() !== "") {
+                             box.classList.add("correct-locked");
+                        }
+                    });
+                }
+               
+            } catch (error) {
+                // 處理網路或 API 錯誤
+                console.error('呼叫 AI 服務失敗:', error);
+                const errorMessage = `連線錯誤或後端錯誤：${error.message}。請檢查您的 Flask 終端機日誌。`;
+                typeEffect('feedback-container', errorMessage, 30);
+               
+            } finally {
+                confirmSentenceBtn.disabled = false;
+            }
+        }
+       
+        // ================= 模態視窗控制 (保持不變) ===================
+
+
+        /**
+         * 顯示圖片結果模態視窗
+         */
+        function showModal() {
+            const levelData = levelDataCache.find(item => item.level === currentLevel);
+            const fullImageUrl = levelData ? levelData.image_full : "/static/images/default_full.jpg";
+
+
+            document.getElementById("generated-image").src = fullImageUrl;
+            document.getElementById("image-modal").classList.add("visible");
+            document.getElementById("generate-image-btn").classList.add("hidden");
+        }
+
+
+        /**
+         * 隱藏圖片結果模態視窗
+         */
+        function hideModal() {
+            document.getElementById("image-modal").classList.remove("visible");
+            document.getElementById("generated-image").src = "";
+        }
+
+
+
+
+        // ================= DOM 載入與遊戲主邏輯 ===================
+
+
+        window.addEventListener("DOMContentLoaded", () => {
+            setupCardEvents();
+            setupAnswerBoxEvents();
+            setupInputListener();
+
+
+            // 🎯 點擊「生成圖片」按鈕的事件
+            document.getElementById("generate-image-btn").addEventListener("click", showModal);
+
+
+            // 🎯 點擊「再玩一次」按鈕的事件
+            document.getElementById("replay-btn").addEventListener("click", () => {
+                hideModal();
+                loadLevel(1); // 回到第一關
+            });
+
+
+            // 🎯 點擊「下一關」按鈕的事件
+            document.getElementById("next-level-btn").addEventListener("click", () => {
+                hideModal();
+                const nextLevel = currentLevel + 1;
+                loadLevel(nextLevel); // 載入下一關
+            });
+        });
+
+
+        // 載入關卡資料
+        fetch("/static/data/easy_mode.json")
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`無法載入 easy_mode.json: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                levelDataCache = data;
+                loadLevel(1);
+            })
+            .catch(err => {
+                console.error("讀取 JSON 失敗:", err);
+                // 不顯示錯誤訊息給用戶，只在控制台記錄
+            });
+
+
+        // 檢查單字按鈕：檢查單字並給單字星星
+        document.querySelector(".check-words-btn").addEventListener("click", () => {
+            const levelData = levelDataCache.find(item => item.level === currentLevel);
+
+
+            if (!levelData) {
+                console.error("找不到當前關卡資料:", currentLevel);
+                return;
+            }
+
+
+            const correctAnswers = levelData.answer.map(w => w.toLowerCase());
+            const userBoxes = [
+                document.getElementById("answer1"),
+                document.getElementById("answer2"),
+                document.getElementById("answer3")
+            ];
+
+
+            const userWords = userBoxes.map(box => box.textContent.trim().toLowerCase());
+           
+            const incorrectWords = [];
+            const missingWords = correctAnswers.filter(word => !userWords.includes(word));
+
+
+            // 視覺標記使用者選擇的單字是否正確
+            userBoxes.forEach(box => {
+                const userWord = box.textContent.trim().toLowerCase();
+                box.classList.remove("correct", "incorrect", "correct-locked");
+
+
+                if (correctAnswers.includes(userWord)) {
+                    box.classList.add("correct");
+                } else {
+                    box.classList.add("incorrect");
+                    if(userWord !== "") {
+                        incorrectWords.push(userWord);
+                    }
+                }
+            });
+
+
+            // 設置單字星星（根據正確單字數量）
+            const correctWordCount = userWords.filter(word => correctAnswers.includes(word)).length;
+            document.querySelectorAll(".word-star").forEach((star, index) => {
+                if (index < correctWordCount) {
+                    star.classList.add("lit");
+                } else {
+                    star.classList.remove("lit");
+                }
+            });
+
+
+            // 在反饋區顯示提醒訊息
+            const feedbackContainer = document.getElementById("feedback-container");
+            feedbackContainer.innerHTML = "現在可以開始造句了！";
+
+
+            // 更新按鈕顯示
+            updateConfirmSentenceButton();
+        });
+
+
+        // 確認造句按鈕：觸發 AI 回饋並給句子星星
+        document.getElementById("confirm-sentence-btn").addEventListener("click", () => {
+            const levelData = levelDataCache.find(item => item.level === currentLevel);
+
+
+            if (!levelData) {
+                console.error("找不到當前關卡資料:", currentLevel);
+                return;
+            }
+
+
+            const correctAnswers = levelData.answer.map(w => w.toLowerCase());
+            const userBoxes = [
+                document.getElementById("answer1"),
+                document.getElementById("answer2"),
+                document.getElementById("answer3")
+            ];
+
+
+            const userSentence = document.getElementById("sentence-input").value.trim();
+            const userWords = userBoxes.map(box => box.textContent.trim().toLowerCase());
+            const sentencePrompt = currentSentencePrompt;
+
+
+           
+            const incorrectWords = [];
+            const missingWords = correctAnswers.filter(word => !userWords.includes(word));
+
+
+            // 視覺標記使用者選擇的單字是否正確（再次確認）
+            userBoxes.forEach(box => {
+                const userWord = box.textContent.trim().toLowerCase();
+                box.classList.remove("correct", "incorrect", "correct-locked");
+
+
+                if (correctAnswers.includes(userWord)) {
+                    box.classList.add("correct");
+                } else {
+                    box.classList.add("incorrect");
+                    if(userWord !== "") {
+                        incorrectWords.push(userWord);
+                    }
+                }
+            });
+
+
+            sendFeedbackToAI(
+                currentLevel,
+                missingWords,
+                incorrectWords,
+                userSentence,
+                sentencePrompt,
+                userWords,
+                correctAnswers
+            );
+
+
+            // 立即根據造句完成度亮起句子星星
+            evaluateSentenceCompletion();
+        });
+    </script>
+</body>
+</html>
+
